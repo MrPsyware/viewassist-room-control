@@ -1,0 +1,180 @@
+blueprint:
+  name: ViewAssist - Room panels
+  description: >
+    Populates ViewAssist/VACA entities with per-area entity lists and a full area->entities map,
+    and navigates to Lights or Room views via voice commands. Supports "show lights" and
+    "show {area} lights" (same for room/status).
+  domain: automation
+
+  input:
+    light_view_path:
+      name: Lights view path
+      default: /view-assist/lights
+      selector:
+        text: {}
+
+    room_view_path:
+      name: Room view path
+      default: /view-assist/room
+      selector:
+        text: {}
+
+    areas_view_path:
+      name: Areas view path
+      default: /view-assist/areas
+      selector:
+        text: {}
+
+    revert_timeout_s:
+      name: Revert timeout (seconds)
+      default: 120
+      selector:
+        number:
+          min: 5
+          max: 3600
+          step: 5
+          mode: slider
+
+    # Keep these natural; we’ll provide 2 variants each (with/without {area})
+    lights_command_no_area:
+      name: Voice command (lights) - no area
+      default: "(Open | show) [the] (lights | lighting)"
+      selector:
+        text: {}
+
+    lights_command_with_area:
+      name: Voice command (lights) - with area
+      default: "(Open | show) {area} (lights | lighting)"
+      selector:
+        text: {}
+
+    room_command_no_area:
+      name: Voice command (room) - no area
+      default: "(Open | show) [the] (room | dashboard | status | controls)"
+      selector:
+        text: {}
+
+    room_command_with_area:
+      name: Voice command (room) - with area
+      default: "(Open | show) {area} (room | dashboard | status | controls)"
+      selector:
+        text: {}
+
+    areas_command:
+      name: Voice command for areas launcher
+      default: "(Open | show) (areas | rooms | house)"
+      selector:
+        text: {}
+
+    areas_json:
+      name: Areas mapping (JSON)
+      description: JSON map of area_id -> list of entity_ids.
+      selector:
+        text:
+          multiline: true
+
+mode: single
+
+trigger:
+  # Lights view
+  - platform: conversation
+    command: !input lights_command_no_area
+    id: voice_command_light
+  - platform: conversation
+    command: !input lights_command_with_area
+    id: voice_command_light_area
+
+  # Room view
+  - platform: conversation
+    command: !input room_command_no_area
+    id: voice_command_room
+  - platform: conversation
+    command: !input room_command_with_area
+    id: voice_command_room_area
+
+  # Areas view
+  - platform: conversation
+    command: !input areas_command
+    id: voice_command_areas
+
+  # Startup refresh
+  - platform: homeassistant
+    event: start
+    id: startup
+
+action:
+  - variables:
+      light_view: !input light_view_path
+      room_view: !input room_view_path
+      areas_view: !input areas_view_path
+      hold_timeout: !input revert_timeout_s
+      areas_json: !input areas_json
+      areas: "{{ areas_json | from_json }}"
+      targets: >-
+        {{ view_assist_entities(filter={'type':'view_audio'})
+           + view_assist_entities(filter={'type':'vaca'}) }}
+
+      # Normalise spoken area -> area_id-like key (best-effort)
+      # If user says "Bed Room" / "bedroom" / "Bed-room" -> "bedroom"
+      requested_area_raw: "{{ trigger.slots.area if (trigger is defined and trigger.slots is defined and 'area' in trigger.slots) else '' }}"
+      requested_area_id: >-
+        {{ requested_area_raw | lower | replace('-', '_') | replace(' ', '_') | trim }}
+
+      # Only accept area if it exists in the map keys
+      requested_area_ok: >-
+        {{ areas is mapping and requested_area_id in areas }}
+
+      # Compose querystring if present/valid
+      area_qs: "{{ ('?area=' ~ requested_area_id) if requested_area_ok else '' }}"
+
+  # Always refresh state pushed to every satellite:
+  # - area_entity_list: satellite's own area (default view)
+  # - areas_entity_map: full mapping so UI can switch based on ?area=...
+  - repeat:
+      for_each: "{{ targets }}"
+      sequence:
+        - variables:
+            this_area_id: "{{ area_id(repeat.item) }}"
+            this_area_entity_list: "{{ areas[this_area_id] | default('') | list }}"
+            areas_entity_map: "{{ areas | default('{}') }}"
+        - action: view_assist.set_state
+          target:
+            entity_id: "{{ repeat.item }}"
+          data:
+            area_entity_list: "{{ this_area_entity_list }}"
+            areas_entity_map: "{{ areas_entity_map }}"
+            this_area_id: "{{ area_id(repeat.item) }}"
+  # Navigate based on voice trigger (with optional area param)
+  - choose:
+      - conditions:
+          - condition: trigger
+            id:
+              - voice_command_light
+              - voice_command_light_area
+        sequence:
+          - action: view_assist.navigate
+            data:
+              device: "{{ view_assist_entity(trigger.device_id) }}"
+              path: "{{ light_view ~ area_qs }}"
+              revert_timeout: "{{ hold_timeout }}"
+
+      - conditions:
+          - condition: trigger
+            id:
+              - voice_command_room
+              - voice_command_room_area
+        sequence:
+          - action: view_assist.navigate
+            data:
+              device: "{{ view_assist_entity(trigger.device_id) }}"
+              path: "{{ room_view ~ area_qs }}"
+              revert_timeout: "{{ hold_timeout }}"
+      - conditions:
+          - condition: trigger
+            id: voice_command_areas
+        sequence:
+          - action: view_assist.navigate
+            data:
+              device: "{{ view_assist_entity(trigger.device_id) }}"
+              path: "{{ areas_view }}"
+              revert_timeout: "{{ hold_timeout }}"              

@@ -1,0 +1,30 @@
+  lights_view:
+    type: custom:button-card
+    template: icon_template
+    icon: mdi:lightbulb-group
+    tap_action:
+      action: call-service
+      service: view_assist.navigate
+      service_data:
+        device: '[[[ return variables.var_assistsat_entity ]]]'
+        path: '[[[ return `${variables.var_dashboard}/lights` ]]]'
+  room_view:
+    type: custom:button-card
+    template: icon_template
+    icon: mdi:room-service
+    tap_action:
+      action: call-service
+      service: view_assist.navigate
+      service_data:
+        device: '[[[ return variables.var_assistsat_entity ]]]'
+        path: '[[[ return `${variables.var_dashboard}/room` ]]]'
+  areas_view:
+    type: custom:button-card
+    template: icon_template
+    icon: mdi:floor-plan
+    tap_action:
+      action: call-service
+      service: view_assist.navigate
+      service_data:
+        device: '[[[ return variables.var_assistsat_entity ]]]'
+        path: '[[[ return `${variables.var_dashboard}/areas` ]]]'

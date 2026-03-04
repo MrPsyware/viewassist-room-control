@@ -1,0 +1,270 @@
+type: panel
+title: Lights
+path: lights
+cards:
+  - type: custom:button-card
+    template:
+      - variable_template
+      - body_template
+    variables:
+      lightscardversion: 0.1.0
+      var_sat_area: |-
+        [[[
+          const norm = (s) =>
+            (s ?? "").toString().trim().toLowerCase()
+              .replace(/-/g, "_")
+              .replace(/\s+/g, "_");
+          return norm(hass.states[variables.var_assistsat_entity]?.attributes?.this_area_id);
+        ]]]
+      var_remote_area: |-
+        [[[
+          const norm = (s) =>
+            (s ?? "").toString().trim().toLowerCase()
+              .replace(/-/g, "_")
+              .replace(/\s+/g, "_");
+          try {
+            const p = new URLSearchParams(window.location.search || "");
+            return norm(p.get("area"));
+          } catch (e) {
+            return "";
+          }
+        ]]]
+      var_is_remote_view: |-
+        [[[
+          return (
+            variables.var_remote_area &&
+            variables.var_remote_area !== variables.var_sat_area
+          );
+        ]]]
+      var_display_area: |-
+        [[[
+          return variables.var_is_remote_view
+            ? variables.var_remote_area
+            : variables.var_sat_area;
+        ]]]
+      var_display_area_title: |-
+        [[[
+          const titleCase = (s) =>
+            (s ?? "")
+              .toString()
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+          return titleCase(variables.var_display_area);
+        ]]]
+      var_display_area_icon: |-
+        [[[
+          const area = variables.var_display_area || "";
+
+          const match = (keywords) =>
+            keywords.some(k => area.includes(k));
+
+          // Ordered by specificity (top = strongest match)
+          if (match(["office","study","desk"])) return "💼";
+          if (match(["bedroom","master","bed"])) return "🛏️";
+          if (match(["guest"])) return "🛌";
+          if (match(["kitchen"])) return "🍳";
+          if (match(["living","lounge","sofa"])) return "🛋️";
+          if (match(["bath","toilet","wc"])) return "🛁";
+          if (match(["dining"])) return "🍽️";
+          if (match(["hall","hallway","entry"])) return "🚪";
+          if (match(["garage"])) return "🚗";
+          if (match(["garden","outside","yard","patio"])) return "🌿";
+          if (match(["loft","attic"])) return "🧱";
+          if (match(["utility","laundry"])) return "🧺";
+          if (match(["downstairs","upstairs"])) return "🏠";
+
+          // Default fallback
+          return "🏠";
+        ]]]       
+      var_lights: |-
+        [[[
+          try {
+            const sat = hass.states[variables.var_assistsat_entity];
+            const attrs = sat?.attributes || {};
+            const map = attrs.areas_entity_map || {};
+            const fallback = attrs.area_entity_list || [];
+            const list = (variables.var_is_remote_view && map[variables.var_display_area])
+              ? map[variables.var_display_area]
+              : fallback;
+            const arr = Array.isArray(list) ? list : (typeof list === "string" ? JSON.parse(list) : []);
+            return [...new Set(arr)].filter(eid => typeof eid === "string" && eid.startsWith("light.")).sort();
+          } catch (e) {
+            return [];
+          }
+        ]]]
+      var_scenes: |-
+        [[[
+          try {
+            const sat = hass.states[variables.var_assistsat_entity];
+            const attrs = sat?.attributes || {};
+            const map = attrs.areas_entity_map || {};
+            const fallback = attrs.area_entity_list || [];
+            const list = (variables.var_is_remote_view && map[variables.var_display_area])
+              ? map[variables.var_display_area]
+              : fallback;
+            const arr = Array.isArray(list) ? list : (typeof list === "string" ? JSON.parse(list) : []);
+            return [...new Set(arr)].filter(eid => typeof eid === "string" && eid.startsWith("scene.")).sort();
+          } catch (e) {
+            return [];
+          }
+        ]]]
+    styles:
+      card:
+        - background: >-
+            [[[ return `center / cover no-repeat url(${variables.background})`
+            ]]]
+        - background-size: cover
+        - border-radius: 0px
+        - font-family: >-
+            [[[ return `'${variables.var_assistsat_entity_font_style}',
+            sans-serif`; ]]]
+      custom_fields:
+        message:
+          - font-size: "[[[ return variables.var_font_size ]]]"
+          - padding: 10px
+          - border-radius: 10px
+          - width: 95%
+          - text-align: start
+          - text-wrap: wrap
+          - justify-content: center
+          - align-self: center
+          - padding: 2%
+          - margin: 0.125rem
+          - max-height: 100vh
+          - height: 100%
+          - overflow-y: auto
+    custom_fields:
+      message:
+        card:
+          type: vertical-stack
+          cards:
+            - type: custom:mushroom-title-card
+              title: |-
+                [[[
+                  return variables.var_display_area_title + " " + variables.var_display_area_icon ;
+                ]]]
+              title_tap_action:
+                action: perform-action
+                perform_action: view_assist.navigate
+                data:
+                  device: "[[[ return variables.var_assistsat_entity ]]]"
+                  path: "[[[ return `${variables.var_dashboard}/areas` ]]]"
+              card_mod:
+                style: |
+                  ha-card {
+                    height: 10px !important;
+                  }                  
+            - type: horizontal-stack
+              cards:
+                - type: vertical-stack
+                  card_mod:
+                    style: |
+                      ha-card {
+                        max-height: 75vh;
+                        overflow-y: auto;
+                        padding-right: 6px; /* space for scrollbar */
+                      }
+
+                      /* Optional: nicer scrollbar (WebKit) */
+                      ha-card::-webkit-scrollbar {
+                        width: 6px;
+                      }
+                      ha-card::-webkit-scrollbar-thumb {
+                        background: rgba(255,255,255,0.3);
+                        border-radius: 4px;
+                      }          
+                  cards:
+                    - type: custom:mushroom-title-card
+                      subtitle: Lights
+                    - type: vertical-stack
+                      cards: |-
+                        [[[
+                          const lights = variables.var_lights;
+                          if (!Array.isArray(lights) || lights.length === 0) {
+                            return [{
+                              type: "markdown",
+                              content: "No lights setup",
+                              card_mod: {
+                                style: `
+                                  ha-card {
+                                    background: rgba(0,0,0,0.6);
+                                    color: white;
+                                    padding: 2rem;
+                                    border-radius: 0.5rem;
+                                    text-align: center;
+                                  }
+                                `
+                              }
+                            }];
+                          }
+
+                          return lights.map(light => ({
+                            type: "custom:mushroom-light-card",
+                            entity: light,
+                            use_light_color: true,
+                            show_brightness_control: true,
+                            show_color_control: true,
+                            show_color_temp_control: true,
+                            fill_container: true,
+                            collapsible_controls: true
+                          }));
+                        ]]]
+                - type: vertical-stack
+                  card_mod:
+                    style: |
+                      ha-card {
+                        max-height: 75vh;
+                        overflow-y: auto;
+                        padding-right: 6px; /* space for scrollbar */
+                      }
+
+                      /* Optional: nicer scrollbar (WebKit) */
+                      ha-card::-webkit-scrollbar {
+                        width: 6px;
+                      }
+                      ha-card::-webkit-scrollbar-thumb {
+                        background: rgba(255,255,255,0.3);
+                        border-radius: 4px;
+                      }          
+                  cards:
+                    - type: custom:mushroom-title-card
+                      subtitle: Scenes
+                    - square: false
+                      type: grid
+                      columns: 2
+                      cards: |-
+                        [[[
+                          const scene = variables.var_scenes;
+                          if (!Array.isArray(scene) || scene.length === 0) {
+                            return [{
+                              type: "markdown",
+                              content: "No scenes setup",
+                              card_mod: {
+                                style: `
+                                  ha-card {
+                                    background: rgba(0,0,0,0.6);
+                                    color: white;
+                                    padding: 2rem;
+                                    border-radius: 0.5rem;
+                                    text-align: center;
+                                  }
+                                `
+                              }
+                            }];
+                          }
+
+                          return scene.map(eid => ({
+                            type: "custom:mushroom-template-card",
+                            entity: eid,
+                            primary: hass.states[eid]?.attributes?.friendly_name ?? eid,
+                            secondary: "Tap to activate",
+                            icon: hass.states[eid]?.attributes?.icon ?? "mdi:palette",
+                            tap_action: {
+                              action: "call-service",
+                              service: "scene.turn_on",
+                              target: { entity_id: eid }
+                            },
+                            hold_action: { action: "more-info" },
+                            fill_container: true
+                          }));
+                        ]]]

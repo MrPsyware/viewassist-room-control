@@ -1,0 +1,42 @@
+{
+    "office": [
+        "light.office_lights",
+        "scene.office_bright",
+        "scene.office_relax",
+        "sensor.office_temperature",
+        "sensor.office_humidity",
+        "binary_sensor.office_window_contact",
+        "switch.office_desk_outlet",
+        "fan.office_fan",
+        "climate.office_thermostat"
+    ],
+    "bedroom": [
+        "light.bedroom_lights",
+        "scene.bedroom_bright",
+        "scene.bedroom_night",
+        "sensor.bedroom_temperature",
+        "sensor.bedroom_humidity",
+        "binary_sensor.bedroom_window_contact",
+        "cover.bedroom_curtains",
+        "fan.bedroom_fan"
+    ],
+    "guest_room": [
+        "light.guest_room_lights",
+        "scene.guest_room_welcome",
+        "sensor.guest_room_temperature",
+        "sensor.guest_room_humidity",
+        "binary_sensor.guest_room_window_contact"
+    ],
+    "downstairs": [
+        "light.hallway_lights",
+        "binary_sensor.hallway_motion",
+        "binary_sensor.front_door_contact",
+        "light.kitchen_lights",
+        "binary_sensor.kitchen_motion",
+        "light.living_room_lights",
+        "sensor.living_room_temperature",
+        "sensor.living_room_humidity",
+        "binary_sensor.living_room_window_contact",
+        "cover.living_room_blinds"
+    ]
+}

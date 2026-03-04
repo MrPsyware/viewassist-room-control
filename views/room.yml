@@ -1,0 +1,510 @@
+type: panel
+title: Room Info
+path: room
+cards:
+  - type: custom:button-card
+    template:
+      - variable_template
+      - body_template
+    variables:
+      roomcardversion: 0.1.0
+      var_sat_area: |-
+        [[[
+          const norm = (s) =>
+            (s ?? "").toString().trim().toLowerCase()
+              .replace(/-/g, "_")
+              .replace(/\s+/g, "_");
+          return norm(hass.states[variables.var_assistsat_entity]?.attributes?.this_area_id);
+        ]]]
+      var_remote_area: |-
+        [[[
+          const norm = (s) =>
+            (s ?? "").toString().trim().toLowerCase()
+              .replace(/-/g, "_")
+              .replace(/\s+/g, "_");
+          try {
+            const p = new URLSearchParams(window.location.search || "");
+            return norm(p.get("area"));
+          } catch (e) {
+            return "";
+          }
+        ]]]
+      var_is_remote_view: |-
+        [[[
+          return (
+            variables.var_remote_area &&
+            variables.var_remote_area !== variables.var_sat_area
+          );
+        ]]]
+      var_display_area: |-
+        [[[
+          return variables.var_is_remote_view
+            ? variables.var_remote_area
+            : variables.var_sat_area;
+        ]]]
+      var_display_area_title: |-
+        [[[
+          const titleCase = (s) =>
+            (s ?? "")
+              .toString()
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+          return titleCase(variables.var_display_area);
+        ]]]
+      var_display_area_icon: |-
+        [[[
+          const area = variables.var_display_area || "";
+
+          const match = (keywords) =>
+            keywords.some(k => area.includes(k));
+
+          // Ordered by specificity (top = strongest match)
+          if (match(["office","study","desk"])) return "💼";
+          if (match(["bedroom","master","bed"])) return "🛏️";
+          if (match(["guest"])) return "🛌";
+          if (match(["kitchen"])) return "🍳";
+          if (match(["living","lounge","sofa"])) return "🛋️";
+          if (match(["bath","toilet","wc"])) return "🛁";
+          if (match(["dining"])) return "🍽️";
+          if (match(["hall","hallway","entry"])) return "🚪";
+          if (match(["garage"])) return "🚗";
+          if (match(["garden","outside","yard","patio"])) return "🌿";
+          if (match(["loft","attic"])) return "🧱";
+          if (match(["utility","laundry"])) return "🧺";
+          if (match(["downstairs","upstairs"])) return "🏠";
+
+          // Default fallback
+          return "🏠";
+        ]]]      
+      var_entities: |-
+        [[[
+          try {
+            const sat = hass.states[variables.var_assistsat_entity];
+            const attrs = sat?.attributes || {};
+            const map = attrs.areas_entity_map || {};
+            const fallback = attrs.area_entity_list || [];
+            const list = (variables.var_is_remote_view && map[variables.var_display_area])
+              ? map[variables.var_display_area]
+              : fallback;
+            return Array.isArray(list) ? list : (typeof list === "string" ? JSON.parse(list) : []);
+          } catch (e) {
+            return [];
+          }
+        ]]]
+    styles:
+      card:
+        - background: >-
+            [[[ return `center / cover no-repeat url(${variables.background})`
+            ]]]
+        - background-size: cover
+        - border-radius: 0px
+        - font-family: >-
+            [[[ return `'${variables.var_assistsat_entity_font_style}',
+            sans-serif`; ]]]
+      custom_fields:
+        message:
+          - font-size: "[[[ return variables.var_font_size ]]]"
+          - padding: 10px
+          - border-radius: 10px
+          - width: 95%
+          - text-align: start
+          - text-wrap: wrap
+          - justify-content: center
+          - align-self: center
+          - padding: 2%
+          - margin: 0.125rem
+          - max-height: 100vh
+          - height: 100%
+    custom_fields:
+      message:
+        card:
+          type: vertical-stack
+          cards:
+            - type: custom:mushroom-title-card
+              title: |-
+                [[[
+                  return variables.var_display_area_title + " " + variables.var_display_area_icon ;
+                ]]]
+              title_tap_action:
+                action: perform-action
+                perform_action: view_assist.navigate
+                data:
+                  device: "[[[ return variables.var_assistsat_entity ]]]"
+                  path: "[[[ return `${variables.var_dashboard}/areas` ]]]"
+            - type: vertical-stack
+              cards: |-
+                [[[
+                  const rEntities = variables.var_entities;
+
+                  if (!Array.isArray(rEntities) || rEntities.length === 0) {
+                    return [{
+                      type: "markdown",
+                      content: "No entities setup\n\n" + JSON.stringify(variables, null, 2),
+                    }];
+                  }
+
+                  const getState = (eid) => hass.states[eid] || null;
+                  const domainOf = (eid) => (eid || "").split(".")[0];
+                  const friendlyOf = (st, eid) =>
+                    (st && st.attributes && st.attributes.friendly_name) ||
+                    (eid || "").split(".")[1]?.replace(/_/g, " ") ||
+                    eid;
+
+                  // Define what you consider "read-only"
+                  const READONLY_DOMAINS = new Set([
+                    "sensor",
+                    "binary_sensor",
+                    "person",
+                    "device_tracker",
+                    "weather",
+                    "sun",
+                  ]);
+
+                  // Define "controls" (lights/scenes intentionally excluded)
+                  const CONTROL_DOMAINS = new Set([
+                    "switch",
+                    "input_boolean",
+                    "cover",
+                    "fan",
+                    "climate",
+                    "lock",
+                    "script",
+                    "button",
+                  ]);
+
+                  const missing = [];
+                  const readonly = [];
+                  const controls = [];
+                  const other = [];
+
+                  for (const eid of rEntities) {
+                    const st = getState(eid);
+                    if (!st) {
+                      missing.push(eid);
+                      continue;
+                    }
+
+                    const d = domainOf(eid);
+
+                    // lights/scenes handled elsewhere + smart chip
+                    if (d === "light" || d === "scene") {
+                      continue;
+                    }
+
+                    if (READONLY_DOMAINS.has(d)) readonly.push(eid);
+                    else if (CONTROL_DOMAINS.has(d)) controls.push(eid);
+                    else other.push(eid);
+                  }
+
+                  // Card builders
+                  const mkControlCard = (eid) => {
+                    const st = getState(eid);
+                    const d = domainOf(eid);
+                    const name = friendlyOf(st, eid);
+
+                    if (!st) {
+                      return {
+                        type: "custom:mushroom-template-card",
+                        primary: eid,
+                        secondary: "Entity not found",
+                        icon: "mdi:alert-circle",
+                        fill_container: true,
+                      };
+                    }
+
+                    switch (d) {
+                      case "switch":
+                      case "input_boolean":
+                        return {
+                          type: "custom:mushroom-entity-card",
+                          entity: eid,
+                          name,
+                          tap_action: { action: "toggle" },
+                          secondary_info: "last-changed",
+                          fill_container: true,
+                        };
+
+                      case "cover":
+                        return {
+                          type: "custom:mushroom-cover-card",
+                          entity: eid,
+                          name,
+                          show_buttons_control: true,
+                          show_position_control: true,
+                          secondary_info: "last-changed",
+                          fill_container: true,
+                        };
+
+                      case "fan":
+                        return {
+                          type: "custom:mushroom-fan-card",
+                          entity: eid,
+                          name,
+                          show_percentage_control: false,
+                          show_oscillate_control: false,
+                          collapsible_controls: true,
+                          secondary_info: "last-changed",
+                          fill_container: true,
+                        };
+
+                      case "script":
+                        return {
+                          type: "custom:mushroom-template-card",
+                          entity: eid,
+                          primary: name,
+                          secondary: "Tap to run",
+                          icon: st.attributes.icon || "mdi:script-text",
+                          layout: "horizontal",
+                          tap_action: {
+                            action: "call-service",
+                            service: "script.turn_on",
+                            target: { entity_id: eid },
+                          },
+                          hold_action: { action: "more-info" },
+                          fill_container: true,
+                        };
+
+                      case "button":
+                        return {
+                          type: "custom:mushroom-template-card",
+                          entity: eid,
+                          primary: name,
+                          secondary: "Tap to press",
+                          icon: st.attributes.icon || "mdi:gesture-tap-button",
+                          layout: "horizontal",
+                          tap_action: { action: "press" },
+                          hold_action: { action: "more-info" },
+                          fill_container: true,
+                        };
+
+                      case "climate":
+                        return {
+                          type: "custom:mushroom-climate-card",
+                          entity: eid,
+                          name,
+                          show_temperature_control: true,
+                          collapsible_controls: true,
+                          secondary_info: "last-changed",
+                          fill_container: true,
+                        };
+
+                      case "lock":
+                        return {
+                          type: "custom:mushroom-lock-card",
+                          entity: eid,
+                          name,
+                          fill_container: true,
+                        };
+
+                      default:
+                        return {
+                          type: "custom:mushroom-entity-card",
+                          entity: eid,
+                          name,
+                          secondary_info: "last-changed",
+                          tap_action: { action: "more-info" },
+                          fill_container: true,
+                        };
+                    }
+                  };
+
+                  const mkChip = (eid) => {
+                    const st = getState(eid);
+                    const d = domainOf(eid);
+
+                    if (d === "sensor") {
+                      const unit = st?.attributes?.unit_of_measurement ? ` ${st.attributes.unit_of_measurement}` : "";
+                      return {
+                        type: "template",
+                        entity: eid,
+                        content: `${st?.state ?? "?"}${unit}`,
+                        icon: st?.attributes?.icon,
+                        tap_action: { action: "more-info" },
+                      };
+                    }
+
+                    return {
+                      type: "entity",
+                      entity: eid,
+                      tap_action: { action: "more-info" },
+                    };
+                  };
+
+                  // ---- SMART CHIPS ----
+                  const uniq = (arr) => [...new Set(arr)];
+                  const asNum = (v) => {
+                    const n = Number(v);
+                    return Number.isFinite(n) ? n : null;
+                  };
+
+                  // All lights in area (from full list, even though excluded from main layout)
+                  const allLights = uniq(rEntities)
+                    .filter(eid => typeof eid === "string" && eid.startsWith("light."))
+                    .filter(eid => hass.states[eid]);
+
+                  const lightsOn = allLights.filter(eid => hass.states[eid].state === "on");
+
+                  // Openings (doors/windows) from binary_sensors
+                  const openingBS = uniq(rEntities)
+                    .filter(eid => typeof eid === "string" && eid.startsWith("binary_sensor."))
+                    .map(eid => hass.states[eid])
+                    .filter(st => st && st.state !== "unavailable")
+                    .filter(st => {
+                      const dc = st.attributes?.device_class;
+                      return dc === "opening" || dc === "door" || dc === "window";
+                    });
+
+                  const openingsOpen = openingBS.filter(st => st.state === "on");
+
+                  // Find “best” environmental sensors by device_class
+                  const envSensors = uniq(rEntities)
+                    .filter(eid => typeof eid === "string" && eid.startsWith("sensor."))
+                    .map(eid => hass.states[eid])
+                    .filter(st => st && st.state !== "unavailable");
+
+                  const pickFirstByDeviceClass = (dc) =>
+                    envSensors.find(st => st.attributes?.device_class === dc) || null;
+
+                  const co2 = pickFirstByDeviceClass("carbon_dioxide");
+                  const temp = pickFirstByDeviceClass("temperature");
+                  const hum  = pickFirstByDeviceClass("humidity");
+
+                  // Thresholds
+                  const CO2_WARN = 1200;     // ppm
+                  const HUM_LOW  = 30;       // %
+                  const HUM_HIGH = 65;       // %
+
+                  const smartChips = [];
+
+                  // Track entities already represented as smart chips so we don't duplicate them
+                  const smartEntityIds = new Set(
+                    [co2?.entity_id, temp?.entity_id, hum?.entity_id].filter(Boolean)
+                  );
+                  // If we show an openings summary chip, suppress individual opening chips too
+                  openingBS.forEach(st => smartEntityIds.add(st.entity_id));
+
+                  // Lights chip
+                  if (allLights.length > 0) {
+                    const countOn = lightsOn.length;
+                    smartChips.push({
+                      type: "template",
+                      icon: countOn > 0 ? "mdi:lightbulb-on" : "mdi:lightbulb-outline",
+                      icon_color: countOn > 0 ? "amber" : "grey",
+                      content: `${countOn} light${countOn === 1 ? "" : "s"} on`,
+                      tap_action: {
+                        action: "call-service",
+                        service: "light.turn_off",
+                        target: { entity_id: allLights },
+                      },
+                      hold_action: {
+                        action: "call-service",
+                        service: "light.turn_on",
+                        target: { entity_id: allLights },
+                      },
+                    });
+                  }
+
+                  // Openings chip
+                  if (openingBS.length > 0) {
+                    const openCount = openingsOpen.length;
+                    const firstOpen = openingsOpen[0]?.entity_id;
+
+                    smartChips.push({
+                      type: "template",
+                      icon: openCount > 0 ? "mdi:door-open" : "mdi:door-closed",
+                      icon_color: openCount > 0 ? "red" : "green",
+                      content: `${openCount} open`,
+                      tap_action: firstOpen
+                        ? { action: "more-info", entity: firstOpen }
+                        : { action: "none" },
+                      hold_action: openingBS[0]
+                        ? { action: "more-info", entity: openingBS[0].entity_id }
+                        : { action: "none" },
+                    });
+                  }
+
+                  // CO2 chip
+                  if (co2) {
+                    const v = asNum(co2.state);
+                    const unit = co2.attributes?.unit_of_measurement ? ` ${co2.attributes.unit_of_measurement}` : "";
+                    const warn = v !== null && v >= CO2_WARN;
+
+                    smartChips.push({
+                      type: "template",
+                      entity: co2.entity_id,
+                      icon: "mdi:molecule-co2",
+                      icon_color: warn ? "red" : "green",
+                      content: v === null ? "CO₂ ?" : `CO₂ ${v}${unit}`,
+                      tap_action: { action: "more-info", entity: co2.entity_id },
+                    });
+                  }
+
+                  // Temp chip
+                  if (temp) {
+                    const v = asNum(temp.state);
+                    const unit = temp.attributes?.unit_of_measurement ? ` ${temp.attributes.unit_of_measurement}` : "";
+                    smartChips.push({
+                      type: "template",
+                      entity: temp.entity_id,
+                      icon: "mdi:thermometer",
+                      content: v === null ? "Temp ?" : `${v}${unit}`,
+                      tap_action: { action: "more-info", entity: temp.entity_id },
+                    });
+                  }
+
+                  // Humidity chip
+                  if (hum) {
+                    const v = asNum(hum.state);
+                    const unit = hum.attributes?.unit_of_measurement ? ` ${hum.attributes.unit_of_measurement}` : "";
+                    const warn = v !== null && (v <= HUM_LOW || v >= HUM_HIGH);
+
+                    smartChips.push({
+                      type: "template",
+                      entity: hum.entity_id,
+                      icon: "mdi:water-percent",
+                      icon_color: warn ? "amber" : "blue",
+                      content: v === null ? "Hum ?" : `${v}${unit}`,
+                      tap_action: { action: "more-info", entity: hum.entity_id },
+                    });
+                  }
+
+                  const out = [];
+
+                  // 1) Chips row: smart chips + readonly chips excluding duplicates
+                  if (smartChips.length || readonly.length) {
+                    const readonlyFiltered = readonly.filter(eid => !smartEntityIds.has(eid));
+                    out.push({
+                      type: "custom:mushroom-chips-card",
+                      alignment: "justify",
+                      chips: [
+                        ...smartChips,
+                        ...readonlyFiltered.map(mkChip),
+                      ],
+                    });
+                  }
+
+                  // 2) Controls grid
+                  if (controls.length || other.length) {
+                    const gridEntities = [...controls, ...other];
+                    out.push({
+                      type: "grid",
+                      columns: 2,
+                      square: false,
+                      cards: gridEntities.map(mkControlCard),
+                    });
+                  }
+
+                  // 3) Missing entities warning
+                  if (missing.length) {
+                    out.push({
+                      type: "custom:mushroom-template-card",
+                      primary: "Missing entities",
+                      secondary: missing.join(", "),
+                      icon: "mdi:alert-circle-outline",
+                      layout: "vertical",
+                      tap_action: { action: "none" },
+                    });
+                  }
+
+                  return out;
+                ]]]
