@@ -7,7 +7,21 @@ cards:
       - variable_template
       - body_template
     variables:
-      lightscardversion: 0.1.0
+      lightscardversion: 0.3.0
+      var_background: |-
+        [[[ 
+          try {
+            if (hass.states[variables.var_assistsat_entity] &&
+                hass.states[variables.var_assistsat_entity].attributes.mode === "night") {
+              return "";
+            }
+            return hass.states[variables.var_assistsat_entity]
+              ? hass.states[variables.var_assistsat_entity].attributes.background
+              : "";
+          } catch (e) {
+            return "";
+          }
+        ]]]
       var_sat_area: |-
         [[[
           const norm = (s) =>
@@ -54,11 +68,8 @@ cards:
       var_display_area_icon: |-
         [[[
           const area = variables.var_display_area || "";
+          const match = (keywords) => keywords.some(k => area.includes(k));
 
-          const match = (keywords) =>
-            keywords.some(k => area.includes(k));
-
-          // Ordered by specificity (top = strongest match)
           if (match(["office","study","desk"])) return "💼";
           if (match(["bedroom","master","bed"])) return "🛏️";
           if (match(["guest"])) return "🛌";
@@ -72,10 +83,8 @@ cards:
           if (match(["loft","attic"])) return "🧱";
           if (match(["utility","laundry"])) return "🧺";
           if (match(["downstairs","upstairs"])) return "🏠";
-
-          // Default fallback
           return "🏠";
-        ]]]       
+        ]]]
       var_lights: |-
         [[[
           try {
@@ -87,7 +96,9 @@ cards:
               ? map[variables.var_display_area]
               : fallback;
             const arr = Array.isArray(list) ? list : (typeof list === "string" ? JSON.parse(list) : []);
-            return [...new Set(arr)].filter(eid => typeof eid === "string" && eid.startsWith("light.")).sort();
+            return [...new Set(arr)]
+              .filter(eid => typeof eid === "string" && eid.startsWith("light."))
+              .sort();
           } catch (e) {
             return [];
           }
@@ -103,7 +114,9 @@ cards:
               ? map[variables.var_display_area]
               : fallback;
             const arr = Array.isArray(list) ? list : (typeof list === "string" ? JSON.parse(list) : []);
-            return [...new Set(arr)].filter(eid => typeof eid === "string" && eid.startsWith("scene.")).sort();
+            return [...new Set(arr)]
+              .filter(eid => typeof eid === "string" && eid.startsWith("scene."))
+              .sort();
           } catch (e) {
             return [];
           }
@@ -111,90 +124,68 @@ cards:
     styles:
       card:
         - background: >-
-            [[[ return `center / cover no-repeat url(${variables.background})`
-            ]]]
+            [[[ return `center / cover no-repeat
+            url(${variables.var_background})`; ]]]
         - background-size: cover
-        - border-radius: 0px
+        - border-radius: 10px
         - font-family: >-
             [[[ return `'${variables.var_assistsat_entity_font_style}',
             sans-serif`; ]]]
       custom_fields:
         message:
-          - font-size: "[[[ return variables.var_font_size ]]]"
-          - padding: 10px
-          - border-radius: 10px
-          - width: 95%
-          - text-align: start
-          - text-wrap: wrap
-          - justify-content: center
-          - align-self: center
-          - padding: 2%
-          - margin: 0.125rem
-          - max-height: 100vh
+          - padding: 16px
           - height: 100%
           - overflow-y: auto
+          - border-radius: 10px
     custom_fields:
       message:
         card:
           type: vertical-stack
           cards:
-            - type: custom:mushroom-title-card
-              title: |-
-                [[[
-                  return variables.var_display_area_title + " " + variables.var_display_area_icon ;
-                ]]]
-              title_tap_action:
-                action: perform-action
-                perform_action: view_assist.navigate
-                data:
-                  device: "[[[ return variables.var_assistsat_entity ]]]"
-                  path: "[[[ return `${variables.var_dashboard}/areas` ]]]"
-              card_mod:
-                style: |
-                  ha-card {
-                    height: 10px !important;
-                  }                  
-            - type: horizontal-stack
+            - type: grid
+              columns: 3
+              square: false
+              cards:
+                - type: custom:mushroom-template-card
+                  primary: |-
+                    [[[
+                      return `${variables.var_display_area_title} ${variables.var_display_area_icon} >`;
+                    ]]]
+                  secondary: Lights and Scenes
+                  tap_action:
+                    action: perform-action
+                    perform_action: view_assist.navigate
+                    data:
+                      device: "[[[ return variables.var_assistsat_entity ]]]"
+                      path: "[[[ return `${variables.var_dashboard}/areas` ]]]"
+                  card_mod:
+                    style: |-
+                      ha-card {
+                        background-color: rgba(0, 0, 0, 0.5) !important;
+                        border-radius: 10px;
+
+                      }
+                      ha-tile-info {
+                        --tile-info-primary-font-size: 2rem !important;
+                      }     
+            - type: grid
+              columns: 2
+              square: false
               cards:
                 - type: vertical-stack
-                  card_mod:
-                    style: |
-                      ha-card {
-                        max-height: 75vh;
-                        overflow-y: auto;
-                        padding-right: 6px; /* space for scrollbar */
-                      }
-
-                      /* Optional: nicer scrollbar (WebKit) */
-                      ha-card::-webkit-scrollbar {
-                        width: 6px;
-                      }
-                      ha-card::-webkit-scrollbar-thumb {
-                        background: rgba(255,255,255,0.3);
-                        border-radius: 4px;
-                      }          
                   cards:
-                    - type: custom:mushroom-title-card
-                      subtitle: Lights
-                    - type: vertical-stack
+                    - type: heading
+                      heading: Lights
+                    - type: grid
+                      columns: 1
+                      square: false
                       cards: |-
                         [[[
                           const lights = variables.var_lights;
                           if (!Array.isArray(lights) || lights.length === 0) {
                             return [{
                               type: "markdown",
-                              content: "No lights setup",
-                              card_mod: {
-                                style: `
-                                  ha-card {
-                                    background: rgba(0,0,0,0.6);
-                                    color: white;
-                                    padding: 2rem;
-                                    border-radius: 0.5rem;
-                                    text-align: center;
-                                  }
-                                `
-                              }
+                              content: "No lights setup"
                             }];
                           }
 
@@ -205,66 +196,39 @@ cards:
                             show_brightness_control: true,
                             show_color_control: true,
                             show_color_temp_control: true,
-                            fill_container: true,
-                            collapsible_controls: true
+                            collapsible_controls: true,
+                            fill_container: true
                           }));
                         ]]]
                 - type: vertical-stack
-                  card_mod:
-                    style: |
-                      ha-card {
-                        max-height: 75vh;
-                        overflow-y: auto;
-                        padding-right: 6px; /* space for scrollbar */
-                      }
-
-                      /* Optional: nicer scrollbar (WebKit) */
-                      ha-card::-webkit-scrollbar {
-                        width: 6px;
-                      }
-                      ha-card::-webkit-scrollbar-thumb {
-                        background: rgba(255,255,255,0.3);
-                        border-radius: 4px;
-                      }          
                   cards:
-                    - type: custom:mushroom-title-card
-                      subtitle: Scenes
-                    - square: false
-                      type: grid
+                    - type: heading
+                      heading: Scenes
+                    - type: grid
                       columns: 2
+                      square: false
                       cards: |-
                         [[[
-                          const scene = variables.var_scenes;
-                          if (!Array.isArray(scene) || scene.length === 0) {
+                          const scenes = variables.var_scenes;
+                          if (!Array.isArray(scenes) || scenes.length === 0) {
                             return [{
                               type: "markdown",
-                              content: "No scenes setup",
-                              card_mod: {
-                                style: `
-                                  ha-card {
-                                    background: rgba(0,0,0,0.6);
-                                    color: white;
-                                    padding: 2rem;
-                                    border-radius: 0.5rem;
-                                    text-align: center;
-                                  }
-                                `
-                              }
+                              content: "No scenes setup"
                             }];
                           }
 
-                          return scene.map(eid => ({
-                            type: "custom:mushroom-template-card",
+                          return scenes.map(eid => ({
+                            type: "tile",
                             entity: eid,
-                            primary: hass.states[eid]?.attributes?.friendly_name ?? eid,
-                            secondary: "Tap to activate",
-                            icon: hass.states[eid]?.attributes?.icon ?? "mdi:palette",
+                            vertical: false,
+                            hide_state: true,
                             tap_action: {
                               action: "call-service",
                               service: "scene.turn_on",
                               target: { entity_id: eid }
                             },
-                            hold_action: { action: "more-info" },
-                            fill_container: true
+                            hold_action: {
+                              action: "more-info"
+                            }
                           }));
                         ]]]

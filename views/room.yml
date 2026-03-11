@@ -7,7 +7,21 @@ cards:
       - variable_template
       - body_template
     variables:
-      roomcardversion: 0.1.0
+      roomcardversion: 0.2.0
+      var_background: |-
+        [[[ 
+          try {
+            if (hass.states[variables.var_assistsat_entity] &&
+                hass.states[variables.var_assistsat_entity].attributes.mode === "night") {
+              return "";
+            }
+            return hass.states[variables.var_assistsat_entity]
+              ? hass.states[variables.var_assistsat_entity].attributes.background
+              : "";
+          } catch (e) {
+            return "";
+          }
+        ]]]
       var_sat_area: |-
         [[[
           const norm = (s) =>
@@ -94,8 +108,8 @@ cards:
     styles:
       card:
         - background: >-
-            [[[ return `center / cover no-repeat url(${variables.background})`
-            ]]]
+            [[[ return `center / cover no-repeat
+            url(${variables.var_background})` ]]]
         - background-size: cover
         - border-radius: 0px
         - font-family: >-
@@ -120,17 +134,32 @@ cards:
         card:
           type: vertical-stack
           cards:
-            - type: custom:mushroom-title-card
-              title: |-
-                [[[
-                  return variables.var_display_area_title + " " + variables.var_display_area_icon ;
-                ]]]
-              title_tap_action:
-                action: perform-action
-                perform_action: view_assist.navigate
-                data:
-                  device: "[[[ return variables.var_assistsat_entity ]]]"
-                  path: "[[[ return `${variables.var_dashboard}/areas` ]]]"
+            - type: grid
+              columns: 3
+              square: false
+              cards:
+                - type: custom:mushroom-template-card
+                  primary: |-
+                    [[[
+                      return `${variables.var_display_area_title} ${variables.var_display_area_icon} >`;
+                    ]]]
+                  secondary: Entities
+                  tap_action:
+                    action: perform-action
+                    perform_action: view_assist.navigate
+                    data:
+                      device: "[[[ return variables.var_assistsat_entity ]]]"
+                      path: "[[[ return `${variables.var_dashboard}/areas` ]]]"
+                  card_mod:
+                    style: |-
+                      ha-card {
+                        background-color: rgba(0, 0, 0, 0.5) !important;
+                        border-radius: 10px;
+
+                      }
+                      ha-tile-info {
+                        --tile-info-primary-font-size: 2rem !important;
+                      }
             - type: vertical-stack
               cards: |-
                 [[[
@@ -296,6 +325,28 @@ cards:
                           fill_container: true,
                         };
 
+                      case "select":
+                        return {
+                          type: "custom:mushroom-select-card",
+                          entity: eid,
+                          name,
+                          fill_container: true,
+                        };
+                      case "number":
+                        return {
+                          type: "custom:mushroom-number-card",
+                          entity: eid,
+                          name,
+                          fill_container: true,
+                        };  
+                      case "vacuum":
+                        return {
+                          type: "custom:mushroom-vacuum-card",
+                          entity: eid,
+                          icon_animation: true,
+                          name,
+                          fill_container: true,
+                        };                                               
                       default:
                         return {
                           type: "custom:mushroom-entity-card",
@@ -485,10 +536,16 @@ cards:
 
                   // 2) Controls grid
                   if (controls.length || other.length) {
+                    const vw = window.innerWidth || 0;
+                    let cols = 2;
+                    if (vw >= 1400) cols = 4;
+                    else if (vw >= 900) cols = 3;
+                    else cols = 2;
+                    
                     const gridEntities = [...controls, ...other];
                     out.push({
                       type: "grid",
-                      columns: 2,
+                      columns: cols,
                       square: false,
                       cards: gridEntities.map(mkControlCard),
                     });

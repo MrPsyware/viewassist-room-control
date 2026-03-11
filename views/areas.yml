@@ -6,11 +6,27 @@ cards:
     template:
       - variable_template
       - body_template
+    variables:
+      areacardversion: 0.2.0
+      var_background: |-
+        [[[
+          try {
+            if (
+              hass.states[variables.var_assistsat_entity] &&
+              hass.states[variables.var_assistsat_entity].attributes.mode === "night"
+            ) return "";
+            return hass.states[variables.var_assistsat_entity]
+              ? hass.states[variables.var_assistsat_entity].attributes.background
+              : "";
+          } catch (e) {
+            return "";
+          }
+        ]]]
     styles:
       card:
         - background: >-
-            [[[ return `center / cover no-repeat url(${variables.background})`
-            ]]]
+            [[[ return `center / cover no-repeat
+            url(${variables.var_background})`; ]]]
         - background-size: cover
         - border-radius: 0px
         - font-family: >-
@@ -19,36 +35,38 @@ cards:
       custom_fields:
         message:
           - overflow-y: auto
-          - font-size: "[[[ return variables.var_font_size ]]]"
-          - padding: 10px
-          - border-radius: 10px
-          - width: 95%
-          - text-align: start
-          - text-wrap: wrap
-          - justify-content: center
-          - align-self: center
-          - padding: 2%
-          - margin: 0.125rem
-          - max-height: 100vh
+          - padding: 16px
           - height: 100%
     custom_fields:
       message:
         card:
           type: vertical-stack
           cards:
-            - type: custom:mushroom-title-card
-              title: |
-                Areas
             - type: grid
-              columns: 2
+              columns: 3
               square: false
-              card_mod:
-                style: |
-                  #root > * {
-                    background: rgba(0,0,0,0.35);
-                    border-radius: 12px;
-                    padding: 6px;
-                  }            
+              cards:
+                - type: custom:mushroom-template-card
+                  primary: Areas 🏠
+                  secondary: Select a room
+                  card_mod:
+                    style: |-
+                      ha-card {
+                        background-color: rgba(0, 0, 0, 0.5) !important;
+                        border-radius: 10px;
+                      }
+                      ha-tile-info {
+                        --tile-info-primary-font-size: 2rem !important;
+                      }
+            - type: grid
+              columns: |-
+                [[[
+                  const vw = window.innerWidth || 0;
+                  if (vw >= 1400) return 4;
+                  if (vw >= 900) return 3;
+                  return 2;
+                ]]]
+              square: false
               cards: |-
                 [[[
                   const sat = hass.states[variables.var_assistsat_entity];
@@ -69,7 +87,7 @@ cards:
                       .replace(/\b\w/g, c => c.toUpperCase());
 
                   const emojiForArea = (area) => {
-                    const a = (area || "");
+                    const a = (area || "").toLowerCase();
                     const match = (k) => k.some(x => a.includes(x));
                     if (match(["office","study","desk"])) return "💼";
                     if (match(["bedroom","master","bed"])) return "🛏️";
@@ -88,103 +106,112 @@ cards:
                   };
 
                   const uniq = (arr) => [...new Set(arr)];
-                  const asArray = (v) => Array.isArray(v) ? v : (typeof v === "string" ? JSON.parse(v) : []);
+                  const asArray = (v) =>
+                    Array.isArray(v) ? v : (typeof v === "string" ? JSON.parse(v) : []);
                   const asNum = (v) => {
                     const n = Number(v);
                     return Number.isFinite(n) ? n : null;
                   };
 
                   const CO2_WARN = 1200;
-
                   const areas = Object.keys(map).sort();
 
                   return areas.map(area => {
                     const rawList = map[area];
-                    const entities = uniq(asArray(rawList)).filter(eid => typeof eid === "string" && hass.states[eid]);
+                    const entities = uniq(asArray(rawList))
+                      .filter(eid => typeof eid === "string" && hass.states[eid]);
 
-                    // Lights status
                     const lights = entities.filter(eid => eid.startsWith("light."));
                     const lightsOn = lights.filter(eid => hass.states[eid].state === "on");
                     const lightsTotal = lights.length;
                     const lightsOnCount = lightsOn.length;
 
-                    // Openings status (door/window/opening device_class)
                     const openingSensors = entities
                       .filter(eid => eid.startsWith("binary_sensor."))
                       .map(eid => hass.states[eid])
                       .filter(st => st && st.state !== "unavailable")
-                      .filter(st => ["opening","door","window"].includes(st.attributes?.device_class));
+                      .filter(st => ["opening", "door", "window"].includes(st.attributes?.device_class));
 
                     const openCount = openingSensors.filter(st => st.state === "on").length;
 
-                    // CO2 status (pick first carbon_dioxide sensor; you can make this "max" later if you want)
                     const co2Sensor = entities
                       .filter(eid => eid.startsWith("sensor."))
                       .map(eid => hass.states[eid])
                       .find(st => st?.attributes?.device_class === "carbon_dioxide");
 
                     const co2Val = co2Sensor ? asNum(co2Sensor.state) : null;
-                    const co2Warn = (co2Val !== null && co2Val >= CO2_WARN);
+                    const co2Warn = co2Val !== null && co2Val >= CO2_WARN;
+                    // Detect occupancy
+                    const presenceSensors = entities
+                      .filter(eid => eid.startsWith("binary_sensor."))
+                      .map(eid => hass.states[eid])
+                      .filter(st =>
+                        st &&
+                        ["motion", "occupancy", "presence"].includes(st.attributes?.device_class)
+                      );
+                    
+                    const occupied = presenceSensors.some(st => st.state === "on");
 
-                    // Colour rules (simple + intuitive)
-                    const lightsColor = lightsOnCount > 0 ? "amber" : "grey";
-
-                    // Room chip priority: open windows/doors (red) > high CO2 (orange) > normal (blue)
-                    const roomColor = openCount > 0 ? "red" : (co2Warn ? "orange" : "blue");
-
-                    // Chip labels (keep compact)
                     const lightsLabel = lightsTotal > 0 ? `${lightsOnCount}/${lightsTotal}` : "—";
-                    const roomLabel = openCount > 0 ? `${openCount}` : (co2Warn ? `CO₂` : "");
+
+                    let roomStatus = "Room OK";
+                    if (openCount > 0) roomStatus = `${openCount} open`;
+                    else if (co2Warn) roomStatus = "CO₂ high";
+                    // Prepend occupancy indicator
+                    if (occupied) roomStatus = `👤 ${roomStatus}`;
+                    
+                    let roomColor = "blue";
+                    if (openCount > 0) roomColor = "red";
+                    else if (co2Warn) roomColor = "orange";
+
+                    const lightsColor = lightsOnCount > 0 ? "amber" : "disabled";
 
                     return {
-                      type: "horizontal-stack",
+                      type: "custom:stack-in-card",
+                      mode: "horizontal",
+                      title: `${titleCase(area)} ${emojiForArea(area)}`,
+                      card_mod: { style: `:host .card-header {    font-size: unset;    padding: 0;}` },
+                     
                       cards: [
                         {
-                          type: "custom:mushroom-title-card",
-                          title: `${titleCase(area)} ${emojiForArea(area)}`,
-                          tap_action: { action: "none" },
-                          hold_action: { action: "none" },
-                          card_mod: { style: `ha-card { padding: 5px; height 0px !important;}` }
+                          type: "custom:mushroom-template-card",
+                          primary: roomStatus,
+                          icon: "mdi:home-analytics",
+                          icon_color: roomColor,
+                          multiline_secondary: false,
+                          fill_container: true,
+                          layout: "vertical",
+
+                          tap_action: {
+                            action: "perform-action",
+                            perform_action: "view_assist.navigate",
+                            data: {
+                              device: variables.var_assistsat_entity,
+                              path: variables.var_dashboard + "/room?area=" + area
+                            }
+                          },
+                          hold_action: {
+                            action: "none"
+                          }
                         },
                         {
-                          type: "custom:mushroom-chips-card",
-                          alignment: "center",
-                          chips: [
-                            {
-                              type: "template",
-                              icon: "mdi:lightbulb",
-                              icon_color: lightsColor,
-                              content: lightsLabel,
-                              tap_action: {
-                                action: "call-service",
-                                service: "view_assist.navigate",
-                                data: {
-                                  device: variables.var_assistsat_entity,
-                                  path: variables.var_dashboard + "/lights?area=" + area
-                                }  
-                              },
-                              hold_action: {
-                                action: "call-service",
-                                service: "light.turn_off",
-                                target: { entity_id: lights }
-                              }  
-                              
-                            },
-                            {
-                              type: "template",
-                              icon: "mdi:home-analytics",
-                              icon_color: roomColor,
-                              content: roomLabel,
-                              tap_action: {
-                                action: "call-service",
-                                service: "view_assist.navigate",
-                                data: {
-                                  device: variables.var_assistsat_entity,
-                                  path: variables.var_dashboard + "/room?area=" + area
-                                }  
-                              },
+                          type: "custom:mushroom-template-card",
+                          icon: "mdi:lightbulb",
+                          icon_color: lightsColor,
+                          primary: lightsLabel + " Lights",
+                          
+                          layout: "vertical",
+                          tap_action: {
+                            action: "perform-action",
+                            perform_action: "view_assist.navigate",
+                            data: {
+                              device: variables.var_assistsat_entity,
+                              path: variables.var_dashboard + "/lights?area=" + area
                             }
-                          ]
+                          },
+                          hold_action: {
+                            action: "none"
+                          }
                         }
                       ]
                     };
